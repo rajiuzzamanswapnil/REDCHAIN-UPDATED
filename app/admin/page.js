@@ -77,6 +77,16 @@ export default function AdminPage() {
 
   useEffect(() => { if (!authLoading) load(); }, [authLoading, load]);
 
+  useEffect(() => {
+    function syncTabFromHash() {
+      const requestedTab = window.location.hash.replace("#", "");
+      if (tabs.some(([key]) => key === requestedTab)) setTab(requestedTab);
+    }
+    syncTabFromHash();
+    window.addEventListener("hashchange", syncTabFromHash);
+    return () => window.removeEventListener("hashchange", syncTabFromHash);
+  }, []);
+
   const averages = useMemo(() => {
     if (!feedback.length) return { usefulness: 0, usability: 0, trust: 0, privacy: 0, recommend: 0 };
     const avg = (key) => feedback.reduce((sum, row) => sum + Number(row[key] || 0), 0) / feedback.length;
@@ -131,7 +141,7 @@ export default function AdminPage() {
       <div className="page-title-row"><div><h2>RedChain administration centre</h2><p>Review donor evidence, moderate emergency requests, manage accounts and analyse research feedback.</p></div><button className="btn btn-secondary" onClick={load}><RefreshCw size={16} /> Refresh</button></div>
       {error && <div className="notice notice-danger mb-16">{error}</div>}
       {message && <div className="notice notice-success mb-16">{message}</div>}
-      <div className="tabs">{tabs.map(([key, label]) => <button key={key} className={`tab ${tab === key ? "active" : ""}`} onClick={() => setTab(key)}>{label}</button>)}</div>
+      <div className="tabs">{tabs.map(([key, label]) => <button key={key} className={`tab ${tab === key ? "active" : ""}`} onClick={() => { setTab(key); window.history.replaceState(null, "", `#${key}`); }}>{label}</button>)}</div>
 
       {tab === "overview" && <>
         <div className="dashboard-grid mt-20">
@@ -141,8 +151,8 @@ export default function AdminPage() {
           <div className="card metric-card"><div><div className="metric-label">Pending reviews</div><div className="metric-value">{stats.pending}</div></div><div className="metric-icon"><FileCheck2 /></div></div>
         </div>
         <div className="grid-2 mt-20">
-          <div className="card"><div className="card-head"><h3>Latest verification queue</h3><button className="btn btn-ghost btn-sm" onClick={() => setTab("verifications")}>Review all</button></div>{documents.filter((d) => d.status === "pending").slice(0,5).length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Donor</th><th>Blood</th><th>Submitted</th><th>Status</th></tr></thead><tbody>{documents.filter((d) => d.status === "pending").slice(0,5).map((doc) => <tr key={doc.id}><td>{doc.profiles?.display_name}</td><td>{oneRelation(doc.profiles?.donor_profiles)?.blood_group || "—"}</td><td>{formatDate(doc.created_at)}</td><td><StatusBadge status={doc.status} /></td></tr>)}</tbody></table></div> : <EmptyState icon={FileCheck2} title="Queue is clear" description="No pending donor verification documents." />}</div>
-          <div className="card"><div className="card-head"><h3>Research snapshot</h3><button className="btn btn-ghost btn-sm" onClick={() => setTab("research")}>View analysis</button></div><div className="card-body"><div className="chart-row"><span>Usefulness</span><div className="chart-bar"><div style={{ width: `${averages.usefulness * 20}%` }} /></div><strong>{averages.usefulness.toFixed(1)}</strong></div><div className="chart-row"><span>Usability</span><div className="chart-bar"><div style={{ width: `${averages.usability * 20}%` }} /></div><strong>{averages.usability.toFixed(1)}</strong></div><div className="chart-row"><span>Trust</span><div className="chart-bar"><div style={{ width: `${averages.trust * 20}%` }} /></div><strong>{averages.trust.toFixed(1)}</strong></div><div className="chart-row"><span>Privacy</span><div className="chart-bar"><div style={{ width: `${averages.privacy * 20}%` }} /></div><strong>{averages.privacy.toFixed(1)}</strong></div></div></div>
+          <div className="card"><div className="card-head"><h3>Latest verification queue</h3><button className="btn btn-ghost btn-sm" onClick={() => { setTab("verifications"); window.history.replaceState(null, "", "#verifications"); }}>Review all</button></div>{documents.filter((d) => d.status === "pending").slice(0,5).length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Donor</th><th>Blood</th><th>Submitted</th><th>Status</th></tr></thead><tbody>{documents.filter((d) => d.status === "pending").slice(0,5).map((doc) => <tr key={doc.id}><td>{doc.profiles?.display_name}</td><td>{oneRelation(doc.profiles?.donor_profiles)?.blood_group || "—"}</td><td>{formatDate(doc.created_at)}</td><td><StatusBadge status={doc.status} /></td></tr>)}</tbody></table></div> : <EmptyState icon={FileCheck2} title="Queue is clear" description="No pending donor verification documents." />}</div>
+          <div className="card"><div className="card-head"><h3>Research snapshot</h3><button className="btn btn-ghost btn-sm" onClick={() => { setTab("research"); window.history.replaceState(null, "", "#research"); }}>View analysis</button></div><div className="card-body"><div className="chart-row"><span>Usefulness</span><div className="chart-bar"><div style={{ width: `${averages.usefulness * 20}%` }} /></div><strong>{averages.usefulness.toFixed(1)}</strong></div><div className="chart-row"><span>Usability</span><div className="chart-bar"><div style={{ width: `${averages.usability * 20}%` }} /></div><strong>{averages.usability.toFixed(1)}</strong></div><div className="chart-row"><span>Trust</span><div className="chart-bar"><div style={{ width: `${averages.trust * 20}%` }} /></div><strong>{averages.trust.toFixed(1)}</strong></div><div className="chart-row"><span>Privacy</span><div className="chart-bar"><div style={{ width: `${averages.privacy * 20}%` }} /></div><strong>{averages.privacy.toFixed(1)}</strong></div></div></div>
         </div>
         <div className="card mt-20"><div className="card-head"><h3>Publish system announcement</h3><Megaphone size={19} color="#d92745" /></div><form className="card-body form-grid" onSubmit={publishAnnouncement}><div className="form-group"><label>Title</label><input className="input" value={announcement.title} onChange={(e) => setAnnouncement((a) => ({ ...a, title: e.target.value }))} required /></div><div className="form-group"><label>Severity</label><select className="select" value={announcement.severity} onChange={(e) => setAnnouncement((a) => ({ ...a, severity: e.target.value }))}><option value="info">Information</option><option value="warning">Warning</option><option value="critical">Critical</option></select></div><div className="form-group full"><label>Message</label><textarea className="textarea" value={announcement.message} onChange={(e) => setAnnouncement((a) => ({ ...a, message: e.target.value }))} required /></div><div className="form-actions full"><button className="btn btn-primary" disabled={saving}>Publish announcement</button></div></form></div>
       </>}
