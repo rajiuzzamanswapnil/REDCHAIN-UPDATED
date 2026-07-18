@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FileCheck2, FileText, LockKeyhole, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import LoadingState from "@/components/LoadingState";
@@ -12,7 +13,8 @@ import { supabase } from "@/lib/supabase/client";
 import { formatDate, readableError, sanitizeFileName } from "@/lib/utils";
 
 export default function VerificationPage() {
-  const { user, profile } = useAuth();
+  const router = useRouter();
+  const { user, profile, isAdmin, loading: authLoading } = useAuth();
   const [donorProfile, setDonorProfile] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [file, setFile] = useState(null);
@@ -34,7 +36,13 @@ export default function VerificationPage() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => {
+    if (!authLoading && isAdmin) router.replace("/admin#verifications");
+  }, [authLoading, isAdmin, router]);
+
+  useEffect(() => {
+    if (!authLoading && user && !isAdmin) load();
+  }, [authLoading, user, isAdmin]);
 
   async function upload(event) {
     event.preventDefault();
@@ -65,7 +73,7 @@ export default function VerificationPage() {
     if (storageError) setError(readableError(storageError)); else await load();
   }
 
-  if (loading) return <AppShell title="Verification"><LoadingState label="Loading verification record..." /></AppShell>;
+  if (authLoading || isAdmin || loading) return <AppShell title="Verification"><LoadingState label={isAdmin ? "Opening administrator verification queue..." : "Loading verification record..."} /></AppShell>;
 
   return (
     <AppShell title="Verification">
