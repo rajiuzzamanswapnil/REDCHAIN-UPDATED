@@ -53,29 +53,81 @@ export default function AdminPage() {
   const load = useCallback(async () => {
     if (!isAdmin) { setLoading(false); return; }
     setLoading(true); setError("");
-    const [userResult, donorResult, requestResult, pendingResult, documentResult, usersResult, feedbackResult, auditResult, announcementResult] = await Promise.all([
+    const [
+      userResult,
+      donorResult,
+      requestResult,
+      pendingResult,
+      documentResult,
+      usersResult,
+      donorProfilesResult,
+      feedbackResult,
+      auditResult,
+      announcementResult,
+      requestRowsResult,
+    ] = await Promise.all([
       supabase.from("profiles").select("id", { count: "exact", head: true }),
       supabase.from("donor_profiles").select("user_id", { count: "exact", head: true }).eq("verification_status", "verified"),
       supabase.from("blood_requests").select("id", { count: "exact", head: true }).in("status", ["open", "matched"]),
       supabase.from("verification_documents").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("verification_documents").select("*, profiles!verification_documents_user_id_fkey(display_name,state,city,donor_profiles(blood_group,verification_status))").order("created_at", { ascending: false }),
-      supabase.from("profiles").select("*, donor_profiles(blood_group,verification_status,is_available)").order("created_at", { ascending: false }),
+      // Keep verification rows relation-free. profiles <-> donor_profiles has two
+      // foreign keys (user_id and verified_by), so an unqualified embed is
+      // ambiguous in PostgREST and can silently leave the admin queue empty.
+      supabase.from("verification_documents").select("*").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+      supabase.from("donor_profiles").select("user_id,blood_group,verification_status,is_available"),
       supabase.from("feedback_responses").select("*, profiles!feedback_responses_user_id_fkey(display_name)").order("updated_at", { ascending: false }),
       supabase.from("audit_logs").select("*, actor:profiles!audit_logs_actor_id_fkey(display_name)").order("created_at", { ascending: false }).limit(100),
       supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(20),
+      supabase.from("blood_requests").select("*, profiles!blood_requests_requester_id_fkey(display_name)").order("created_at", { ascending: false }).limit(100),
     ]);
-    const { data: requestRows } = await supabase.from("blood_requests").select("*, profiles!blood_requests_requester_id_fkey(display_name)").order("created_at", { ascending: false }).limit(100);
+
+    const queryErrors = [
+      userResult, donorResult, requestResult, pendingResult, documentResult,
+      usersResult, donorProfilesResult, feedbackResult, auditResult,
+      announcementResult, requestRowsResult,
+    ].map((result) => result.error).filter(Boolean);
+
+    const donorProfileByUser = new Map(
+      (donorProfilesResult.data || []).map((row) => [row.user_id, row])
+    );
+    const userRows = (usersResult.data || []).map((row) => ({
+      ...row,
+      donor_profiles: donorProfileByUser.get(row.id) || null,
+    }));
+    const userById = new Map(userRows.map((row) => [row.id, row]));
+    const verificationRows = (documentResult.data || []).map((row) => ({
+      ...row,
+      profiles: userById.get(row.user_id) || null,
+    }));
+
     setStats({ users: userResult.count || 0, donors: donorResult.count || 0, requests: requestResult.count || 0, pending: pendingResult.count || 0 });
-    setDocuments(documentResult.data || []);
-    setRequests(requestRows || []);
-    setUsers(usersResult.data || []);
+    setDocuments(verificationRows);
+    setRequests(requestRowsResult.data || []);
+    setUsers(userRows);
     setFeedback(feedbackResult.data || []);
     setAudits(auditResult.data || []);
     setAnnouncements(announcementResult.data || []);
+    if (queryErrors.length) {
+      setError(`Some administrator data could not load: ${readableError(queryErrors[0])}`);
+    }
     setLoading(false);
   }, [isAdmin]);
 
   useEffect(() => { if (!authLoading) load(); }, [authLoading, load]);
+
+  useEffect(() => {
+    if (!isAdmin || !user?.id) return undefined;
+    const channel = supabase
+      .channel(`admin-verification-queue-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "verification_documents" },
+        () => load()
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [isAdmin, user?.id, load]);
 
   useEffect(() => {
     function syncTabFromHash() {
