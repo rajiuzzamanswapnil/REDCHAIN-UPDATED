@@ -56,7 +56,13 @@ export default function AppShell({ title, children }) {
     loadUnread();
   }, [user, pathname]);
 
-  const links = useMemo(() => (isAdmin ? [...baseLinks, { href: "/admin", label: "Administration", icon: ShieldCheck }] : baseLinks), [isAdmin]);
+  const links = useMemo(() => {
+    if (!isAdmin) return baseLinks;
+    return [
+      ...baseLinks.filter((link) => link.href !== "/verification"),
+      { href: "/admin", label: "Administration", icon: ShieldCheck },
+    ];
+  }, [isAdmin]);
 
   if (loading || !user) return <LoadingState label="Securing your RedChain session..." />;
 
